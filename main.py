@@ -294,6 +294,19 @@ def resolve_sources(report, sources):
         if resolved is None:
             dropped += 1 + len(dataset.facts)
             continue
+        # A descriptive span may omit a name used in an adjacent span. Anchor
+        # the dataset name to a verbatim occurrence on the SAME PDF page only;
+        # facts keep their independently selected source IDs.
+        name = normalize(dataset.name).casefold()
+        if name not in normalize(resolved["evidence"]["quote"]).casefold():
+            original_id = dataset.evidence.source_id
+            original_index = next(i for i, s in enumerate(sources) if s["source_id"] == original_id)
+            candidates = [(abs(i - original_index), s) for i, s in enumerate(sources)
+                          if s["page"] == resolved["evidence"]["page"]
+                          and name in normalize(s["text"]).casefold()]
+            if candidates:
+                anchor = min(candidates, key=lambda item: item[0])[1]
+                resolved["evidence"] = {"page": anchor["page"], "quote": anchor["text"]}
         facts = []
         for fact in dataset.facts:
             resolved_fact = resolve(fact.model_dump())
