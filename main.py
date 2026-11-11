@@ -244,6 +244,7 @@ source_id를 새로 만들거나 다른 항목의 근거를 잘못 연결하지 
 비밀번호·API 키를 요구하거나 출력하지 않는다. 실험·외부 검색을 수행했다고 말하지 않는다.
 지정된 JSON 스키마를 따른다. findings와 datasets 배열은 확인된 항목만 포함한다.
 """
+SYSTEM_PROMPT += "\n" + json.dumps(ReferencedReport.model_json_schema(), ensure_ascii=False)
 
 
 def build_sources(pages):
@@ -654,7 +655,6 @@ def ask(
                     ),
 
                     response_mime_type="application/json",
-                    response_json_schema=ReferencedReport.model_json_schema(),
 
                     temperature=0.1,
                 ),
