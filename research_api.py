@@ -3,6 +3,7 @@ import base64
 import binascii
 import io
 import json
+import logging
 import os
 import re
 import warnings
@@ -24,6 +25,7 @@ FIELDS = {"자료명": "이미지에서 읽은 활동명 또는 문서 제목",
           "준비 방향": "사용자가 말한 수준·기간을 고려한 현실적인 준비 제안",
           "확인할 사항": "읽을 수 없는 글씨, 불명확한 날짜와 원문 확인이 필요한 사항"}
 MAX_B64 = 3_200_000
+logger = logging.getLogger("prism-media")
 
 
 class Strict(BaseModel):
@@ -128,8 +130,11 @@ def json_reply(prompt, part, schema, model):
                     response_mime_type="application/json", temperature=0.1))
     except Exception as error:
         code = getattr(error, "code", None) or getattr(error, "status_code", None)
+        logger.error("Media provider failure type=%s code=%s", type(error).__name__, code)
         if code == 429:
             raise HTTPException(429, "Gemini 요청 한도에 도달했습니다. 잠시 뒤 다시 시도해 주세요.") from None
+        if code in (400, 401, 403, 404):
+            raise HTTPException(502, f"Gemini 요청 오류({code})입니다. 서버의 모델·키·미디어 지원 설정을 확인해 주세요.") from None
         raise HTTPException(502, "AI 연결을 확인하지 못했습니다. 서버의 API 키·모델 설정을 확인해 주세요.") from None
     text = getattr(reply, "text", None)
     if not isinstance(text, str) or len(text) > 50000:
@@ -137,7 +142,9 @@ def json_reply(prompt, part, schema, model):
     text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
     try:
         parsed = schema.model_validate(json.loads(text))
-    except (ValueError, ValidationError):
+    except (ValueError, ValidationError) as error:
+        fields = [".".join(map(str, e["loc"])) for e in error.errors(include_input=False)][:8] if isinstance(error, ValidationError) else ["json"]
+        logger.error("Media response validation failed fields=%s", fields)
         raise HTTPException(502, "AI 응답 형식이 맞지 않습니다. 한 번 더 분석해 주세요.") from None
     usage = getattr(reply, "usage_metadata", None)
     return parsed, {"input": getattr(usage, "prompt_token_count", None),
