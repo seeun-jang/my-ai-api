@@ -19,6 +19,18 @@ def clean(value, limit=600):
     return html.unescape(re.sub(r"<[^>]*>", "", str(value or ""))).strip()[:limit]
 
 
+def relevant(query, text):
+    """Conservative metadata overlap, not a claim to have read the work."""
+    stop = {"a", "an", "the", "for", "of", "and", "in", "to", "on", "with"}
+    words = set(re.findall(r"[\w]+", text.casefold()))
+    terms = list(dict.fromkeys(w for w in re.findall(r"[\w]+", query.casefold()) if w not in stop))
+    def matches(term):
+        if term == "ai" and {"artificial", "intelligence"} <= words:
+            return True
+        return term in words or (len(term) >= 6 and any(w.startswith(term[:6]) for w in words))
+    return bool(terms) and sum(matches(t) for t in terms) >= min(2, len(terms))
+
+
 def fetch(provider, query):
     global _last_ol
     cache_key = (provider, query.casefold())
@@ -28,8 +40,8 @@ def fetch(provider, query):
             return cached[1]
     if provider == "books":
         url = "https://openlibrary.org/search.json"
-        params = {"q": query, "limit": 6,
-                  "fields": "key,title,author_name,first_publish_year,cover_i,isbn"}
+        params = {"q": query, "limit": 12,
+                  "fields": "key,title,author_name,first_publish_year,cover_i,isbn,subject"}
         # Open Library's anonymous limit is one request per second.
         with _ol_lock:
             remaining = 1.1 - (time.monotonic() - _last_ol)
@@ -52,6 +64,9 @@ def fetch(provider, query):
             title = clean(item.get("title"), 350)
             if not re.fullmatch(r"/works/OL\d+W", key) or not title or key in seen:
                 continue
+            metadata = " ".join([title, *item.get("author_name", [])[:4], *item.get("subject", [])[:12]])
+            if not relevant(query, metadata):
+                continue
             seen.add(key)
             cover = item.get("cover_i")
             results.append({"title": title,
@@ -73,6 +88,7 @@ def fetch(provider, query):
                 "year": parts[0][0] if parts and parts[0] and isinstance(parts[0][0], int) else None,
                 "url": "https://doi.org/" + quote(doi, safe="/"), "source": "Crossref",
                 "journal": clean((item.get("container-title") or [""])[0], 200)})
+    results = results[:6]
     with _lock:
         if len(_cache) >= 128:
             _cache.pop(next(iter(_cache)))
