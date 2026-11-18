@@ -23,6 +23,8 @@ from pydantic import (
     model_validator,
 )
 
+from research_api import FIELDS as IMAGE_FIELDS, create_router
+
 
 # ============================================================
 # 1. 기본 설정
@@ -37,7 +39,7 @@ logger = logging.getLogger("prism-ai")
 
 app = FastAPI(
     title="PRISM AI",
-    description="논문의 핵심과 데이터셋을 원문 근거와 함께 정리합니다.",
+    description="포스터·사진·음성에서 준비 조건을 읽고 실제 도서·논문과 연결합니다.",
 )
 
 
@@ -563,15 +565,17 @@ def log_gemini_error(error, api_key):
 def home():
     return {
         "name": "PRISM AI",
+        "icon": "🔺",
+        "fields": list(IMAGE_FIELDS),
+        "version": "14.1",
+        "capabilities": ["poster", "image", "voice", "resources", "paper"],
         "description": app.description,
         "model": MODEL_NAME,
         "stage": (
             "논문 정보 추출 baseline · "
             "학습 모델 적용 전"
         ),
-        "how_to_use": (
-            "POST /ask에 question, tone, pages를 전송합니다."
-        ),
+        "how_to_use": "POST /analyze: 사진, /listen: 준비 조건 음성, /resources: 도서·논문 검색, /ask: 기존 PDF 논문 정리",
     }
 
 
@@ -845,3 +849,7 @@ def ask(
             else "사용자 제공 문서"
         ),
     )
+
+
+app.include_router(create_router(check_access, MODEL_NAME))
+
